@@ -9,7 +9,8 @@ import Foundation
 //
 // What you say first:
 //   "Vehicle, Booking, and a RentalService. Overlap is the core rule.
-//    Pricing is a protocol — hourly vs daily is a new type, not a switch on enum."
+//    Price is HourlyRate — a concrete type. Daily later is another struct.
+//    I will not write if kind == .suv inside book()."
 //
 // Flutter mapping (only if they ask): this is domain. UI is a form that calls
 // book/return. Same cubit -> use case -> repository split as 01 and 02.
@@ -57,13 +58,9 @@ enum RentalError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// Why a protocol: adding "weekend surcharge" later is a new struct.
-/// Say: "I will not write if kind == .suv { ... } inside book()."
-protocol Pricing {
-    func quote(from start: Date, to end: Date) -> Money
-}
-
-struct HourlyRate: Pricing {
+/// One rate type is enough for 60 minutes. Daily / weekend is another struct later.
+/// Say: "I do not need a protocol until I have a second implementation."
+struct HourlyRate {
     let paisePerHour: Int64
     func quote(from start: Date, to end: Date) -> Money {
         let seconds = max(0, end.timeIntervalSince(start))
@@ -75,12 +72,12 @@ struct HourlyRate: Pricing {
 
 final class RentalService {
     private var vehicles: [String: Vehicle] = [:]
-    private var pricing: [String: Pricing] = [:]
+    private var rates: [String: HourlyRate] = [:]
     private var bookings: [String: Booking] = [:]
 
-    func addVehicle(_ v: Vehicle, pricing: Pricing) {
+    func addVehicle(_ v: Vehicle, rate: HourlyRate) {
         vehicles[v.id] = v
-        self.pricing[v.id] = pricing
+        rates[v.id] = rate
     }
 
     /// Half-open range [start, end). Touching endpoints is allowed
@@ -108,7 +105,7 @@ final class RentalService {
     func `return`(bookingId: String, at date: Date) throws -> Money {
         guard var b = bookings[bookingId] else { throw RentalError.unknownBooking }
         guard b.status == .active else { throw RentalError.notActive }
-        guard let price = pricing[b.vehicleId] else { throw RentalError.unknownVehicle }
+        guard let price = rates[b.vehicleId] else { throw RentalError.unknownVehicle }
 
         // Charge actual usage: start -> return time (not the original reserved end).
         // Say: "If they return late, they pay until return. Early return: pay until return.
@@ -142,7 +139,7 @@ func runRentalScenarios() {
     let svc = RentalService()
     svc.addVehicle(
         Vehicle(id: "v1", plate: "MH-01-AB-1234", kind: "car"),
-        pricing: HourlyRate(paisePerHour: 1_000_000) // 10,000 INR/hour = 1_000_000 paise
+        rate: HourlyRate(paisePerHour: 1_000_000) // 10,000 INR/hour = 1_000_000 paise
     )
 
     do {
